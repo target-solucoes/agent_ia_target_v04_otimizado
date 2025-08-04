@@ -22,7 +22,7 @@ def create_agent(session_user_id=None):
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
     # Carregar dados do parquet
-    data_path = "data/raw/DadosComercial_limpo.parquet"
+    data_path = "data/raw/DadosComercial_resumido.parquet"
     df = pd.read_parquet(data_path)
 
     # Aplicar normalização de texto aos dados
@@ -40,7 +40,7 @@ def create_agent(session_user_id=None):
 
     # Adicionar informações sobre o dataset
     dataset_info = f"""
-Dataset: DadosComercial_limpo.parquet
+Dataset: DadosComercial_resumido.parquet
 Localização: {data_path}
 Número de linhas: {len(df)}
 Número de colunas: {len(df.columns)}
@@ -184,7 +184,7 @@ Tipos de dados:
 
     agent = NormalizedAgent(
         model=OpenAIChat(id=selected_model),
-        description="Você é um assistente especializado em análise de dados comerciais. Você tem acesso ao dataset DadosComercial_limpo.parquet com normalização de texto aplicada e pode responder perguntas baseadas nesse conteúdo. Você também tem memória contextual para lembrar de conversas anteriores na mesma sessão.",
+        description="Você é um assistente especializado em análise de dados comerciais. Você tem acesso ao dataset DadosComercial_resumido.parquet com normalização de texto aplicada e pode responder perguntas baseadas nesse conteúdo. Você também tem memória contextual para lembrar de conversas anteriores na mesma sessão.",
         tools=[
             ReasoningTools(add_instructions=True),
             CalculatorTools(
@@ -196,13 +196,13 @@ Tipos de dados:
         enable_user_memories=True,
         instructions=f"""
 ESCOPO DO PROJETO:
-Você é um assistente especializado em análise de dados comerciais, focado exclusivamente no dataset DadosComercial_limpo.parquet. Seu escopo inclui:
+Você é um assistente especializado em análise de dados comerciais, focado exclusivamente no dataset DadosComercial_resumido.parquet. Seu escopo inclui:
 - Análises estatísticas, estruturais e contextuais dos dados comerciais
 - Interpretação semântica de consultas em linguagem natural
 - Geração de insights baseados nos dados disponíveis
 - Resposta a perguntas relacionadas ao conteúdo do dataset
 
-IMPORTANTE: Caso uma pergunta fuja significativamente deste escopo, responda educadamente: "Esta pergunta está fora do meu escopo de análise de dados comerciais. Posso ajudá-lo com questões relacionadas ao dataset DadosComercial_limpo.parquet."
+IMPORTANTE: Caso uma pergunta fuja significativamente deste escopo, responda educadamente: "Esta pergunta está fora do meu escopo de análise de dados comerciais. Posso ajudá-lo com questões relacionadas ao dataset DadosComercial_resumido.parquet."
 
 METODOLOGIA DE RACIOCÍNIO (ReAct - Reasoning and Acting):
 Para cada consulta do usuário, siga esta estrutura de raciocínio:
