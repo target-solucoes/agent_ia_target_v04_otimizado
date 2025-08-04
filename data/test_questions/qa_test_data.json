@@ -1,0 +1,55 @@
+[
+    {
+      "pergunta": "Qual é a soma total da coluna Valor_Vendido?",
+      "resposta": "A soma total da coluna Valor_Vendido é 1.534.311.000."
+    },
+    {
+      "pergunta": "Qual é a soma total da coluna Qtd_Vendida?",
+      "resposta": "A soma total da coluna Qtd_Vendida é 1.226.742.097."
+    },
+    {
+      "pergunta": "Quantos registros únicos existem na coluna Cod_Produto?",
+      "resposta": "Existem 819 registros únicos na coluna Cod_Produto."
+    },
+    {
+      "pergunta": "Quais são os valores únicos da coluna UF_Cliente?",
+      "resposta": "Os valores únicos da coluna UF_Cliente são GO, PR, RS, CE, SP, BA, MG, SC, PA, MA, ES, RJ, AM, RO, MS, PB, RN, PE, PI, AL, MT, SE, AC, TO, AP, DF, EX, RR."
+    },
+    {
+      "pergunta": "Há valores nulos?",
+      "resposta": "Sim, há valores nulos na coluna Cod_Regiao_Vendedor, totalizando 508 ocorrências."
+    },
+    {
+      "pergunta": "Qual é o valor médio de Peso_Unitario?",
+      "resposta": "O valor médio de Peso_Unitario é 0.4946229"
+    },
+    {
+      "pergunta": "Existe algum valor nulo na coluna Data_Entrega?",
+      "resposta": "Não, não existe nenhum valor nulo na coluna Data_Entrega."
+    },
+    {
+      "pergunta": "Quantas compras foram feitas no estado de São Paulo (UF_Cliente = 'SP')?",
+      "resposta": "Foram feitas 570.933 compras no estado de São Paulo."
+    },
+    {
+      "pergunta": "Qual é o valor máximo em Valor_Vendido?",
+      "resposta": "O valor máximo em Valor_Vendido é 382.097,72."
+    },
+    {
+      "pergunta": "Qual é o valor mínimo em Qtd_Vendida?",
+      "resposta": "O valor mínimo em Qtd_Vendida é 0."
+    },
+    {
+      "pergunta": "Qual é o total de clientes únicos (Cod_Cliente)?",
+      "resposta": "O total de clientes únicos é 17.589"
+    },
+    {
+      "pergunta": "Qual é o total de clientes únicos?",
+      "resposta": "O total de clientes únicos é 17.589"
+    },
+    {
+      "pergunta": "Quantas vezes aparece o município \"CURITIBA\" na coluna Municipio_Cliente?",
+      "resposta": "A cidade Curitiba, aparece 94.298 vezes na coluna Municipio_Cliente"
+    }
+  ]
+  

@@ -1,0 +1,61 @@
+{
+  "columns": {
+    "Empresa": ["Nome da empresa", "Empresa", "companhia"],
+    "Data_Emissao": ["Data em que o pedido foi emitido", "Data de emissão", "Data do pedido", "Data da compra", "quando foi emitido"],
+    "Data_Entrega": ["Data prevista ou realizada da entrega", "Data de entrega", "entrega prevista", "entrega realizada", "quando entregou"],
+    "Cod_Produto": ["Código identificador do produto", "Código do produto", "Produto", "ID do produto", "Identificador do item"],
+    "Cod_Familia_Produto": ["Código da família do produto", "Família do produto", "Código da família", "família", "categoria do produto"],
+    "Cod_Grupo_Produto": ["Código do grupo do produto", "Grupo do produto", "grupo", "código do grupo", "grupo comercial"],
+    "Cod_Linha_Produto": ["Código da linha do produto", "Linha do produto", "código da linha", "tipo de linha"],
+    "Peso_Unitario": ["Peso por unidade do produto", "Peso por unidade", "peso unitário", "peso de cada item", "peso individual"],
+    "Cod_Vendedor": ["Código identificador do vendedor", "Código do vendedor", "vendedor", "id do vendedor", "quem vendeu"],
+    "Cod_Regiao_Vendedor": ["Código da região de atuação do vendedor", "Região do vendedor", "região de atuação", "área do vendedor", "UF vendedor"],
+    "Cod_Cliente": ["Identificador do cliente", "Código do cliente", "cliente", "ID cliente", "comprador"],
+    "UF_Cliente": ["Estado (UF) do cliente", "UF do cliente", "Estado do cliente", "estado", "UF"],
+    "Municipio_Cliente": ["Cidade do cliente", "município", "localidade", "cidade", "onde mora o cliente"],
+    "Cod_Segmento_Cliente": ["Código do segmento ou setor do cliente", "Segmento do cliente", "setor", "tipo de cliente", "categoria de cliente"],
+    "Valor_Vendido": ["Valor monetário total da venda", "Valor vendido", "faturamento", "valor total", "valor da venda", "receita"],
+    "Peso_Vendido": ["Peso total vendido", "peso total", "peso das vendas", "peso entregue"],
+    "Qtd_Vendida": ["Quantidade de itens vendidos", "Quantidade vendida", "itens vendidos", "volume vendido", "quantidade de itens vendidos", "itens"]
+  },
+  "metrics": {
+    "Numero de Compras": ["Quantidade de linhas do dataset", "Número de pedidos", "número de compras", "quantidade de registros", "quantidade de vendas", "total de pedidos"]
+  },
+  "categories": {
+    "temporal": ["Data_Emissao", "Data_Entrega"],
+    "produto": ["Cod_Produto", "Cod_Familia_Produto", "Cod_Grupo_Produto", "Cod_Linha_Produto", "Peso_Unitario"],
+    "vendas": ["Valor_Vendido", "Peso_Vendido", "Qtd_Vendida"],
+    "cliente": ["Cod_Cliente", "UF_Cliente", "Municipio_Cliente", "Cod_Segmento_Cliente"],
+    "vendedor": ["Cod_Vendedor", "Cod_Regiao_Vendedor"]
+  },
+  "conventions": {
+    "Numero de Compras": "Quantidade de linhas do dataset",
+    "AC": "Acre",
+    "AL": "Alagoas",
+    "AP": "Amapá",
+    "AM": "Amazonas",
+    "BA": "Bahia",
+    "CE": "Ceará",
+    "DF": "Distrito Federal",
+    "ES": "Espírito Santo",
+    "GO": "Goiás",
+    "MA": "Maranhão",
+    "MT": "Mato Grosso",
+    "MS": "Mato Grosso do Sul",
+    "MG": "Minas Gerais",
+    "PA": "Pará",
+    "PB": "Paraíba",
+    "PR": "Paraná",
+    "PE": "Pernambuco",
+    "PI": "Piauí",
+    "RJ": "Rio de Janeiro",
+    "RN": "Rio Grande do Norte",
+    "RS": "Rio Grande do Sul",
+    "RO": "Rondônia",
+    "RR": "Roraima",
+    "SC": "Santa Catarina",
+    "SP": "São Paulo",
+    "SE": "Sergipe",
+    "TO": "Tocantins"
+  }
+}
