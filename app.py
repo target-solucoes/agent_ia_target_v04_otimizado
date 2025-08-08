@@ -7,7 +7,7 @@ import sys
 import uuid
 
 sys.path.append("src")
-from duckdb_agent import create_agent
+from chatbot_agents import create_agent
 from text_normalizer import TextNormalizer
 
 warnings.filterwarnings("ignore")
@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore")
 load_dotenv()
 
 # Page configuration
-st.set_page_config(page_title="Agente IA Target", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Agente IA Target v0.2", page_icon="🤖", layout="wide")
 
 
 def format_sql_query(query):
@@ -365,14 +365,14 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # Import selected_model from duckdb_agent
-    from duckdb_agent import selected_model
+    # Import selected_model from chatbot_agents
+    from chatbot_agents import selected_model
 
     # Enhanced Professional Header
     st.markdown(
         f"""
         <div class="header-container">
-            <h1 class="app-title">🤖 AGENTE IA TARGET</h1>
+            <h1 class="app-title">🤖 AGENTE IA TARGET v0.2</h1>
             <p class="app-subtitle">INTELIGÊNCIA ARTIFICIAL PARA ANÁLISE DE DADOS</p>
             <p class="app-description">
                 Converse naturalmente com seus dados comerciais. Faça perguntas em linguagem natural 
