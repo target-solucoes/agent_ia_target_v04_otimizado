@@ -1,10 +1,13 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
 from dotenv import load_dotenv
 import warnings
 import sys
 import uuid
+import plotly.express as px
+import plotly.graph_objects as go
 
 sys.path.append("src")
 from chatbot_agents import create_agent
@@ -15,7 +18,155 @@ warnings.filterwarnings("ignore")
 load_dotenv()
 
 # Page configuration
-st.set_page_config(page_title="Agente IA Target v0.2", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Agente IA Target v0.4", page_icon="🤖", layout="wide")
+
+
+def filter_user_friendly_context(context_dict):
+    """
+    Filtra contexto para mostrar apenas variáveis relevantes para o usuário,
+    removendo variáveis técnicas internas.
+    """
+    if not context_dict:
+        return {}
+    
+    # Variáveis técnicas que devem ser ocultadas (prefixos e nomes específicos)
+    technical_prefixes = [
+        '_temporal_', '_comparative_', '_requires_', '_preserve_', '_enable_', 
+        '_disable_', '_auto_', '_override_', '_expand_', '_allow_'
+    ]
+    
+    technical_keywords = [
+        'merge_timestamp', 'merge_operations', 'conflicts_resolved', 'context_age',
+        'calculation_required', 'comparison_type', 'temporal_metadata', 
+        'growth_type', 'variation_type', 'evolution_granularity'
+    ]
+    
+    # Variáveis que devem sempre ser mostradas (lista de permissão)
+    user_relevant_fields = [
+        'Municipio_Cliente', 'UF_Cliente', 'Des_Linha_Produto', 'Data_>=', 'Data_<', 
+        'Data', 'Cliente', 'Produto', 'Regiao', 'Vendedor', 'sem_filtros'
+    ]
+    
+    filtered_context = {}
+    
+    for key, value in context_dict.items():
+        # Sempre incluir campos relevantes para o usuário
+        if key in user_relevant_fields:
+            filtered_context[key] = value
+            continue
+        
+        # Verificar se é uma variável técnica
+        is_technical = False
+        
+        # Verificar prefixos técnicos
+        if any(key.startswith(prefix) for prefix in technical_prefixes):
+            is_technical = True
+        
+        # Verificar palavras-chave técnicas
+        if any(keyword in key.lower() for keyword in technical_keywords):
+            is_technical = True
+        
+        # Verificar se é metadado interno (começando com underscore)
+        if key.startswith('_') and key not in user_relevant_fields:
+            is_technical = True
+        
+        # Se não é técnica, incluir no contexto filtrado
+        if not is_technical:
+            filtered_context[key] = value
+    
+    return filtered_context
+
+
+def format_context_for_display(context_dict):
+    """
+    Formata contexto de forma amigável para exibição no sidebar
+    """
+    if not context_dict or context_dict.get('sem_filtros') == 'consulta_geral':
+        return "🔍 **Consulta Geral**\n\n*Nenhum filtro ativo*"
+    
+    display_parts = ["✅ **Filtros Ativos**", ""]
+    
+    # Categorizar filtros
+    location_filters = []
+    temporal_filters = []
+    product_filters = []
+    other_filters = []
+    
+    for key, value in context_dict.items():
+        if key in ['Municipio_Cliente', 'UF_Cliente', 'cidade', 'estado', 'municipio', 'uf']:
+            location_filters.append((key, value))
+        elif key in ['Data_>=', 'Data_<', 'Data', 'periodo', 'mes', 'ano']:
+            temporal_filters.append((key, value))
+        elif key in ['Des_Linha_Produto', 'Produto', 'produto', 'linha']:
+            product_filters.append((key, value))
+        else:
+            other_filters.append((key, value))
+    
+    # Formatação por categoria com melhor visual
+    if location_filters:
+        display_parts.append("📍 **Localização**")
+        for key, value in location_filters:
+            if key in ['Municipio_Cliente', 'cidade', 'municipio']:
+                display_parts.append(f"🏙️ Cidade: **{value}**")
+            elif key in ['UF_Cliente', 'estado', 'uf']:
+                display_parts.append(f"🗺️ Estado: **{value}**")
+            else:
+                display_parts.append(f"📍 {key}: **{value}**")
+        display_parts.append("")
+    
+    if temporal_filters:
+        display_parts.append("📅 **Período**")
+        
+        # Detectar se é um range de datas
+        start_date = None
+        end_date = None
+        
+        for key, value in temporal_filters:
+            if 'Data_>=' in key or key == 'inicio':
+                start_date = value
+            elif 'Data_<' in key or key == 'fim':
+                end_date = value
+        
+        if start_date and end_date:
+            display_parts.append(f"⏰ **Período**: {start_date} até {end_date}")
+        else:
+            # Exibir filtros temporais individuais
+            for key, value in temporal_filters:
+                if key == 'Data':
+                    display_parts.append(f"📆 Data: **{value}**")
+                elif 'mes' in key.lower():
+                    display_parts.append(f"📅 Mês: **{value}**")
+                elif 'ano' in key.lower():
+                    display_parts.append(f"🗓️ Ano: **{value}**")
+                else:
+                    display_name = key.replace("Data_", "").replace(">=", "A partir de").replace("<", "Antes de")
+                    display_parts.append(f"📅 {display_name}: **{value}**")
+        display_parts.append("")
+    
+    if product_filters:
+        display_parts.append("🛍️ **Produto**")
+        for key, value in product_filters:
+            if key in ['Des_Linha_Produto', 'linha']:
+                display_parts.append(f"📦 Linha: **{value}**")
+            elif key in ['Produto', 'produto']:
+                display_parts.append(f"🏷️ Produto: **{value}**")
+            else:
+                display_parts.append(f"🛍️ {key}: **{value}**")
+        display_parts.append("")
+    
+    if other_filters:
+        display_parts.append("📊 **Outros Filtros**")
+        for key, value in other_filters:
+            # Nomes mais amigáveis para filtros
+            display_name = key.replace("_", " ").replace("-", " ").title()
+            display_parts.append(f"⚙️ {display_name}: **{value}**")
+        display_parts.append("")
+    
+    # Adicionar rodapé informativo se houver filtros
+    if any([location_filters, temporal_filters, product_filters, other_filters]):
+        display_parts.extend(["---", "💡 *Filtros aplicados à consulta atual*"])
+    
+    return "\n".join(display_parts).strip()
 
 
 def format_sql_query(query):
@@ -83,10 +234,130 @@ def format_sql_query(query):
     return "\n".join(formatted_lines)
 
 
+def format_compact_number(value):
+    """
+    Formata números grandes em notação compacta (1M, 2.5M, etc.)
+    """
+    try:
+        if value >= 1_000_000_000:
+            return f"{value/1_000_000_000:.1f}B"
+        elif value >= 1_000_000:
+            return f"{value/1_000_000:.1f}M"
+        elif value >= 1_000:
+            return f"{value/1_000:.1f}K"
+        else:
+            return f"{value:.0f}"
+    except:
+        return str(value)
+
+def render_plotly_visualization(visualization_data):
+    """
+    Renderiza gráfico Plotly baseado nos dados de visualização do agente.
+    Retorna True se renderizou um gráfico, False se renderizou uma tabela.
+    """
+    if not visualization_data:
+        return False
+    
+    # Se não é para visualizar como gráfico, não fazer nada
+    if visualization_data.get('type') != 'bar_chart' or not visualization_data.get('has_data', False):
+        return False
+    
+    try:
+        # Obter dados do DataFrame
+        df = visualization_data.get('data')
+        config = visualization_data.get('config', {})
+        
+        if df is None or df.empty:
+            return False
+        
+        # Preparar rótulos compactos para as barras
+        df_with_labels = df.copy()
+        df_with_labels['value_label'] = df_with_labels['value'].apply(format_compact_number)
+        
+        # CORREÇÃO: Converter coluna 'label' para string categórica para evitar tratamento numérico
+        df_with_labels['label'] = df_with_labels['label'].astype(str)
+        
+        # Criar gráfico de barras horizontais
+        fig = px.bar(
+            df_with_labels,
+            x='value',
+            y='label',
+            orientation='h',
+            title=config.get('title', 'Top Resultados'),
+            labels={
+                'value': 'Valor',
+                'label': 'Item'
+            },
+            text='value_label'  # Usar rótulos compactos
+        )
+        
+        # Configurações de layout para melhor aparência
+        fig.update_layout(
+            height=max(400, len(df) * 45),  # Altura ligeiramente aumentada para acomodar rótulos
+            margin=dict(l=20, r=120, t=50, b=20),  # Margem direita aumentada para rótulos
+            xaxis_title="",
+            yaxis_title="",
+            showlegend=False,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+        )
+        
+        # Personalizar barras com cores azuis harmoniosas
+        fig.update_traces(
+            marker_color='#3498db',  # Azul agradável e harmonioso
+            marker_line_color='#2980b9',  # Borda azul mais escura
+            marker_line_width=1.5,
+            opacity=0.85,
+            textposition='outside',  # Posição dos rótulos fora das barras
+            textfont=dict(size=11, color='#2c3e50', family='Arial')  # Estilo do texto dos rótulos
+        )
+        
+        # Configurações do eixo Y para melhor legibilidade
+        fig.update_yaxes(
+            categoryorder='total ascending',  # Ordenar por valor
+            tickfont=dict(size=12, family='Arial'),
+            type='category'  # Forçar tratamento como categoria, não numérico
+        )
+        
+        # Configurações do eixo X com formatação inteligente e estilo aprimorado
+        value_format = config.get('value_format', 'number')
+        if value_format == 'currency':
+            fig.update_xaxes(
+                tickformat=',.0f',  # Formato monetário com separadores de milhares
+                tickprefix='R$ ',
+                tickfont=dict(size=10, family='Arial'),
+                gridcolor='rgba(52, 152, 219, 0.2)',  # Grid sutil em azul
+                gridwidth=1
+            )
+        else:
+            fig.update_xaxes(
+                tickformat=',.0f',  # Formato numérico com separadores de milhares
+                tickfont=dict(size=10, family='Arial'),
+                gridcolor='rgba(52, 152, 219, 0.2)',  # Grid sutil em azul
+                gridwidth=1
+            )
+        
+        # Ajustar título do gráfico com melhor estilo
+        fig.update_layout(
+            title_font=dict(size=16, family='Arial', color='#2c3e50'),
+            title_x=0.5  # Centralizar título
+        )
+        
+        # Renderizar o gráfico no Streamlit
+        st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+        
+        return True
+        
+    except Exception as e:
+        # Em caso de erro, não fazer nada e deixar o conteúdo textual aparecer
+        st.error(f"Erro ao renderizar gráfico: {str(e)}")
+        return False
+
+
 @st.cache_data
 def load_parquet_data():
     """Carrega arquivo Parquet com tratamento robusto de codificação"""
-    data_path = "data/raw/DadosComercial_resumido.parquet"
+    data_path = "data/raw/DadosComercial_resumido_v02.parquet"
 
     # Method 1: Try direct pandas loading
     try:
@@ -372,7 +643,7 @@ def main():
     st.markdown(
         f"""
         <div class="header-container">
-            <h1 class="app-title">🤖 AGENTE IA TARGET v0.2</h1>
+            <h1 class="app-title">🤖 AGENTE IA TARGET v0.4</h1>
             <p class="app-subtitle">INTELIGÊNCIA ARTIFICIAL PARA ANÁLISE DE DADOS</p>
             <p class="app-description">
                 Converse naturalmente com seus dados comerciais. Faça perguntas em linguagem natural 
@@ -406,10 +677,21 @@ def main():
     df, data_error = load_parquet_data()
     agent, df_agent, agent_error = initialize_agent()
 
-    # Enhanced Chat interface
+    # Enhanced Chat interface with Sidebar Context
     if agent is not None and df is not None:
-        # Center the chat interface
-        chat_col1, chat_col2, chat_col3 = st.columns([1, 3, 1])
+        # Sidebar para contexto
+        with st.sidebar:
+            st.markdown("## 📊 Contexto da Consulta")
+            st.markdown("---")
+            
+            # Exibir contexto atual ou estado inicial
+            if hasattr(st.session_state, 'current_context') and st.session_state.current_context:
+                st.markdown(st.session_state.current_context)
+            else:
+                st.markdown("🔍 **Aguardando consulta...**\n\n*O contexto dos filtros aparecerá aqui*")
+        
+        # Main content area - usar mais espaço já que sidebar está sendo usado
+        chat_col1, chat_col2, chat_col3 = st.columns([0.5, 4, 0.5])
 
         with chat_col2:
             # Debug mode toggle
@@ -451,6 +733,9 @@ Como posso ajudá-lo hoje?"""
                     st.session_state.messages = []
                     if "session_user_id" in st.session_state:
                         del st.session_state.session_user_id
+                    # NOVA FUNCIONALIDADE: Limpar contexto persistente do agente
+                    if agent is not None and hasattr(agent, 'persistent_context'):
+                        agent.persistent_context = {}
                     # Force app rerun to refresh everything
                     st.rerun()
 
@@ -461,7 +746,45 @@ Como posso ajudá-lo hoje?"""
             with chat_container:
                 for message in st.session_state.messages:
                     with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
+                        # Verificar se é uma mensagem do assistant com visualização
+                        if (message["role"] == "assistant" and 
+                            "visualization_data" in message and 
+                            message["visualization_data"]):
+                            
+                            # Tentar renderizar gráfico Plotly primeiro
+                            chart_rendered = render_plotly_visualization(message["visualization_data"])
+                            
+                            # Se renderizou gráfico, não exibir conteúdo textual (ou exibir apenas insights)
+                            if chart_rendered:
+                                # Extrair apenas insights do conteúdo (tudo que não seja dados tabulares)
+                                content_lines = message["content"].split('\n')
+                                insights_lines = []
+                                skip_data_section = False
+                                
+                                for line in content_lines:
+                                    line_lower = line.lower().strip()
+                                    # Identificar seções de dados para pular
+                                    if any(marker in line_lower for marker in ['```', 'tabela:', '|', '1.', '2.', '3.', 'ranking', 'top ']):
+                                        if any(marker in line_lower for marker in ['insight', 'observa', 'conclus', 'destaq']):
+                                            skip_data_section = False
+                                        else:
+                                            skip_data_section = True
+                                            continue
+                                    
+                                    # Incluir apenas insights/análises
+                                    if not skip_data_section and line.strip():
+                                        if any(word in line_lower for word in ['insight', 'anális', 'observ', 'destaq', 'conclus', 'importante']):
+                                            insights_lines.append(line)
+                                
+                                # Exibir apenas insights se houver
+                                if insights_lines:
+                                    st.markdown('\n'.join(insights_lines))
+                            else:
+                                # Se não conseguiu renderizar gráfico, exibir conteúdo textual normal
+                                st.markdown(message["content"])
+                        else:
+                            # Mensagem normal (usuário ou assistant sem visualização)
+                            st.markdown(message["content"])
 
             # Process user input first
             if prompt := st.chat_input(
@@ -481,6 +804,30 @@ Como posso ajudá-lo hoje?"""
 
                         # Prepare response content
                         response_content = response.content
+
+                        # ALWAYS display query context above response
+                        final_context = {}
+                        normalizations_note = ""
+                        
+                        # Extract context from debug info if available
+                        if hasattr(agent, "debug_info") and agent.debug_info:
+                            # Get query contexts
+                            all_contexts = agent.debug_info.get("query_contexts", [])
+                            if all_contexts:
+                                # Merge all contexts
+                                for ctx in all_contexts:
+                                    if isinstance(ctx, dict):
+                                        final_context.update(ctx)
+                          
+                       
+                        # Update sidebar context instead of showing in chat
+                        if final_context:
+                            # Filter and format context for user-friendly display
+                            filtered_context = filter_user_friendly_context(final_context)
+                            formatted_context = format_context_for_display(filtered_context)
+                            st.session_state.current_context = formatted_context
+                        else:
+                            st.session_state.current_context = "Nenhum filtro específico aplicado"
 
                         # If debug mode is active, add debug information
                         if (
@@ -521,9 +868,19 @@ Como posso ajudá-lo hoje?"""
 
                             response_content += debug_content
 
-                        st.session_state.messages.append(
-                            {"role": "assistant", "content": response_content}
-                        )
+                        # Preparar dados de visualização para a mensagem
+                        message_data = {
+                            "role": "assistant", 
+                            "content": response_content
+                        }
+                        
+                        # Adicionar dados de visualização se disponíveis
+                        if hasattr(agent, "debug_info") and agent.debug_info:
+                            visualization_data = agent.debug_info.get("visualization_data")
+                            if visualization_data and visualization_data.get('type') == 'bar_chart' and visualization_data.get('has_data'):
+                                message_data["visualization_data"] = visualization_data
+                        
+                        st.session_state.messages.append(message_data)
                     except Exception as e:
                         error_msg = f"❌ Erro ao processar: {str(e)}"
                         st.session_state.messages.append(
