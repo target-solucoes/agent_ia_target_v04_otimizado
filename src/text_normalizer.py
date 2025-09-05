@@ -6,8 +6,10 @@ Aplica transformações padrão para resolver problemas de capitalização e for
 import re
 import unicodedata
 import pandas as pd
-from typing import Union, List, Dict, Any
-
+from typing import Union, List, Dict, Any, Tuple, Optional
+import yaml
+import calendar
+from datetime import datetime, timedelta
 
 class TextNormalizer:
     """Classe para normalização consistente de texto em datasets e consultas."""
@@ -175,6 +177,193 @@ class TextNormalizer:
                         search_index[col][normalized_value].append(idx)
         
         return search_index
+    
+    def parse_temporal_entities(self, text: str) -> Dict[str, Any]:
+        """
+        Extrai e converte entidades temporais de texto natural para formatos estruturados.
+        
+        Exemplos:
+        - "julho de 2015" → {"Data_>=": "2015-07-01", "Data_<": "2015-08-01"}
+        - "janeiro 2020" → {"Data_>=": "2020-01-01", "Data_<": "2020-02-01"}
+        - "dezembro de 2023" → {"Data_>=": "2023-12-01", "Data_<": "2024-01-01"}
+        
+        Args:
+            text: Texto contendo possíveis referências temporais
+            
+        Returns:
+            Dicionário com entidades temporais estruturadas
+        """
+        text_lower = text.lower().strip()
+        
+        # Mapeamento de meses em português
+        month_mapping = {
+            'janeiro': 1, 'jan': 1,
+            'fevereiro': 2, 'fev': 2,
+            'março': 3, 'mar': 3, 'marco': 3,
+            'abril': 4, 'abr': 4,
+            'maio': 5, 'mai': 5,
+            'junho': 6, 'jun': 6,
+            'julho': 7, 'jul': 7,
+            'agosto': 8, 'ago': 8,
+            'setembro': 9, 'set': 9, 'sep': 9,
+            'outubro': 10, 'out': 10, 'oct': 10,
+            'novembro': 11, 'nov': 11,
+            'dezembro': 12, 'dez': 12, 'dec': 12
+        }
+        
+        temporal_entities = {}
+        
+        # Padrão principal: "mês de ano" ou "mês ano"
+        month_year_patterns = [
+            r'\b(\w+)\s+de\s+(\d{4})\b',  # "julho de 2015"
+            r'\b(\w+)\s+(\d{4})\b',       # "julho 2015"
+            r'\bem\s+(\w+)\s+de\s+(\d{4})\b',  # "em julho de 2015"
+            r'\bno\s+(\w+)\s+de\s+(\d{4})\b',  # "no julho de 2015"
+            r'\bdurante\s+(\w+)\s+de\s+(\d{4})\b',  # "durante julho de 2015"
+        ]
+        
+        for pattern in month_year_patterns:
+            matches = re.finditer(pattern, text_lower)
+            for match in matches:
+                month_text = match.group(1).strip()
+                year_text = match.group(2).strip()
+                
+                # Verificar se o mês é reconhecido
+                if month_text in month_mapping:
+                    month_num = month_mapping[month_text]
+                    year_num = int(year_text)
+                    
+                    # Calcular primeiro e último dia do mês
+                    start_date = f"{year_num:04d}-{month_num:02d}-01"
+                    
+                    # Calcular primeiro dia do mês seguinte
+                    if month_num == 12:
+                        next_month = 1
+                        next_year = year_num + 1
+                    else:
+                        next_month = month_num + 1
+                        next_year = year_num
+                    
+                    end_date = f"{next_year:04d}-{next_month:02d}-01"
+                    
+                    temporal_entities['Data_>='] = start_date
+                    temporal_entities['Data_<'] = end_date
+                    
+                    # Adicionar metadados para debugging
+                    temporal_entities['_temporal_metadata'] = {
+                        'original_text': match.group(0),
+                        'parsed_month': month_text,
+                        'parsed_year': year_text,
+                        'month_number': month_num,
+                        'year_number': year_num
+                    }
+                    break  # Usar apenas a primeira ocorrência válida
+        
+        # Padrão para períodos entre meses: "entre junho e julho de 2015"
+        between_pattern = r'\bentre\s+(\w+)\s+e\s+(\w+)\s+de\s+(\d{4})\b'
+        between_match = re.search(between_pattern, text_lower)
+        
+        if between_match and not temporal_entities:
+            start_month_text = between_match.group(1).strip()
+            end_month_text = between_match.group(2).strip()
+            year_text = between_match.group(3).strip()
+            
+            if start_month_text in month_mapping and end_month_text in month_mapping:
+                start_month_num = month_mapping[start_month_text]
+                end_month_num = month_mapping[end_month_text]
+                year_num = int(year_text)
+                
+                # Data de início: primeiro dia do primeiro mês
+                start_date = f"{year_num:04d}-{start_month_num:02d}-01"
+                
+                # Data de fim: primeiro dia do mês após o último mês
+                if end_month_num == 12:
+                    next_month = 1
+                    next_year = year_num + 1
+                else:
+                    next_month = end_month_num + 1
+                    next_year = year_num
+                
+                end_date = f"{next_year:04d}-{next_month:02d}-01"
+                
+                temporal_entities['Data_>='] = start_date
+                temporal_entities['Data_<'] = end_date
+                
+                temporal_entities['_temporal_metadata'] = {
+                    'original_text': between_match.group(0),
+                    'type': 'period_between_months',
+                    'start_month': start_month_text,
+                    'end_month': end_month_text,
+                    'parsed_year': year_text
+                }
+        
+        # Padrão para anos individuais: "em 2015", "no ano de 2015"
+        year_patterns = [
+            r'\bem\s+(\d{4})\b',
+            r'\bno\s+ano\s+de\s+(\d{4})\b',
+            r'\bdurante\s+(\d{4})\b',
+        ]
+        
+        if not temporal_entities:  # Só aplicar se não encontrou padrão mês/ano
+            for pattern in year_patterns:
+                year_match = re.search(pattern, text_lower)
+                if year_match:
+                    year_num = int(year_match.group(1))
+                    
+                    temporal_entities['Data_>='] = f"{year_num:04d}-01-01"
+                    temporal_entities['Data_<'] = f"{year_num + 1:04d}-01-01"
+                    
+                    temporal_entities['_temporal_metadata'] = {
+                        'original_text': year_match.group(0),
+                        'type': 'full_year',
+                        'parsed_year': year_num
+                    }
+                    break
+        
+        return temporal_entities
+    
+    def format_temporal_filter(self, temporal_data: Dict[str, Any]) -> str:
+        """
+        Converte entidades temporais em filtro SQL adequado.
+        
+        Args:
+            temporal_data: Dados temporais extraídos de parse_temporal_entities()
+            
+        Returns:
+            String com filtro SQL para cláusula WHERE
+        """
+        if not temporal_data or ('Data_>=' not in temporal_data or 'Data_<' not in temporal_data):
+            return ""
+        
+        start_date = temporal_data['Data_>=']
+        end_date = temporal_data['Data_<']
+        
+        # Retornar filtro SQL
+        return f"Data >= '{start_date}' AND Data < '{end_date}'"
+    
+    def extract_and_format_temporal(self, text: str) -> Optional[Tuple[Dict[str, str], str]]:
+        """
+        Método conveniente que extrai entidades temporais e retorna tanto o contexto
+        estruturado quanto o filtro SQL formatado.
+        
+        Args:
+            text: Texto para processamento
+            
+        Returns:
+            Tupla (contexto_estruturado, filtro_sql) ou None se nenhuma entidade encontrada
+        """
+        temporal_entities = self.parse_temporal_entities(text)
+        
+        if not temporal_entities:
+            return None
+        
+        # Criar contexto estruturado (removendo metadados)
+        context = {k: v for k, v in temporal_entities.items() if not k.startswith('_')}
+        
+        # Criar filtro SQL
+        sql_filter = self.format_temporal_filter(temporal_entities)
+        
+        return context, sql_filter
 
 
 def load_alias_mapping(alias_file_path: str = None) -> Dict[str, List[str]]:
@@ -190,7 +379,7 @@ def load_alias_mapping(alias_file_path: str = None) -> Dict[str, List[str]]:
     import json
     
     if alias_file_path is None:
-        alias_file_path = "data/mappings/alias.json"
+        alias_file_path = "data/mappings/alias.yaml"
     
     try:
         with open(alias_file_path, 'r', encoding='utf-8') as f:
