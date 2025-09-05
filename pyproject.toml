@@ -18,6 +18,7 @@ pyarrow = "^10.0.0"
 fastparquet = "^0.8.0"
 chardet = "^5.0.0"
 sqlalchemy = "*"
+plotly = "5.0.0"
 
 [build-system]
 requires = ["poetry-core"]
