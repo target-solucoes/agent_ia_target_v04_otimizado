@@ -8,6 +8,7 @@ import sys
 import uuid
 import plotly.express as px
 import plotly.graph_objects as go
+import time
 
 sys.path.append("src")
 from chatbot_agents import create_agent
@@ -18,7 +19,7 @@ warnings.filterwarnings("ignore")
 load_dotenv()
 
 # Page configuration
-st.set_page_config(page_title="Agente IA Target v0.4", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Agente IA Target v0.4 (Otimizado)", page_icon="🤖", layout="wide")
 
 
 def filter_user_friendly_context(context_dict):
@@ -274,9 +275,6 @@ def render_plotly_visualization(visualization_data):
         df_with_labels = df.copy()
         df_with_labels['value_label'] = df_with_labels['value'].apply(format_compact_number)
         
-        # CORREÇÃO: Converter coluna 'label' para string categórica para evitar tratamento numérico
-        df_with_labels['label'] = df_with_labels['label'].astype(str)
-        
         # Criar gráfico de barras horizontais
         fig = px.bar(
             df_with_labels,
@@ -315,8 +313,7 @@ def render_plotly_visualization(visualization_data):
         # Configurações do eixo Y para melhor legibilidade
         fig.update_yaxes(
             categoryorder='total ascending',  # Ordenar por valor
-            tickfont=dict(size=12, family='Arial'),
-            type='category'  # Forçar tratamento como categoria, não numérico
+            tickfont=dict(size=12, family='Arial')
         )
         
         # Configurações do eixo X com formatação inteligente e estilo aprimorado
@@ -643,7 +640,7 @@ def main():
     st.markdown(
         f"""
         <div class="header-container">
-            <h1 class="app-title">🤖 AGENTE IA TARGET v0.4</h1>
+            <h1 class="app-title">🤖 AGENTE IA TARGET v0.4 (Otimizado)</h1>
             <p class="app-subtitle">INTELIGÊNCIA ARTIFICIAL PARA ANÁLISE DE DADOS</p>
             <p class="app-description">
                 Converse naturalmente com seus dados comerciais. Faça perguntas em linguagem natural 
@@ -759,10 +756,17 @@ Como posso ajudá-lo hoje?"""
                                 # Extrair apenas insights do conteúdo (tudo que não seja dados tabulares)
                                 content_lines = message["content"].split('\n')
                                 insights_lines = []
+                                response_time_line = ""
                                 skip_data_section = False
                                 
                                 for line in content_lines:
                                     line_lower = line.lower().strip()
+                                    
+                                    # Capturar linha do tempo de resposta
+                                    if "tempo de resposta:" in line_lower:
+                                        response_time_line = line
+                                        continue
+                                    
                                     # Identificar seções de dados para pular
                                     if any(marker in line_lower for marker in ['```', 'tabela:', '|', '1.', '2.', '3.', 'ranking', 'top ']):
                                         if any(marker in line_lower for marker in ['insight', 'observa', 'conclus', 'destaq']):
@@ -779,6 +783,13 @@ Como posso ajudá-lo hoje?"""
                                 # Exibir apenas insights se houver
                                 if insights_lines:
                                     st.markdown('\n'.join(insights_lines))
+                                
+                                # Sempre exibir o tempo de resposta se existir
+                                if response_time_line:
+                                    # Garantir formatação correta
+                                    if "⏱️" not in response_time_line:
+                                        response_time_line = response_time_line.replace("*Tempo de resposta:", "⏱️ *Tempo de resposta:")
+                                    st.markdown(f"\n{response_time_line}")
                             else:
                                 # Se não conseguiu renderizar gráfico, exibir conteúdo textual normal
                                 st.markdown(message["content"])
@@ -796,11 +807,17 @@ Como posso ajudá-lo hoje?"""
                 # Get agent response
                 with st.spinner("🤔 Analisando..."):
                     try:
+                        # Capture start time
+                        start_time = time.time()
+                        
                         # Get debug mode from session state
                         debug_mode = st.session_state.get("debug_mode", False)
 
                         # Run agent with debug mode
                         response = agent.run(prompt, debug_mode=debug_mode)
+                        
+                        # Calculate response time
+                        response_time = time.time() - start_time
 
                         # Prepare response content
                         response_content = response.content
@@ -868,6 +885,9 @@ Como posso ajudá-lo hoje?"""
 
                             response_content += debug_content
 
+                        # Add response time to content
+                        response_content += f"\n\n---\n\n⏱️ *Tempo de resposta: {response_time:.2f}s*"
+
                         # Preparar dados de visualização para a mensagem
                         message_data = {
                             "role": "assistant", 
@@ -882,7 +902,9 @@ Como posso ajudá-lo hoje?"""
                         
                         st.session_state.messages.append(message_data)
                     except Exception as e:
-                        error_msg = f"❌ Erro ao processar: {str(e)}"
+                        # Calculate response time even for errors
+                        response_time = time.time() - start_time
+                        error_msg = f"❌ Erro ao processar: {str(e)}\n\n---\n\n⏱️ *Tempo de resposta: {response_time:.2f}s*"
                         st.session_state.messages.append(
                             {"role": "assistant", "content": error_msg}
                         )

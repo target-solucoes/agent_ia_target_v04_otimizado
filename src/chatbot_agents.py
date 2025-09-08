@@ -142,7 +142,7 @@ Tipos de dados:
     )
 
     memory_db = SqliteMemoryDb(table_name="temp_memory", db_file=temp_db_path)
-    memory = Memory(model=OpenAIChat(id=selected_model), db=memory_db)
+    memory = Memory(model=OpenAIChat(id=selected_model, reasoning_effort="low"), db=memory_db)
 
     # Criar classe customizada de PythonTools para controlar execução
     class OptimizedPythonTools(PythonTools):
@@ -204,20 +204,7 @@ Tipos de dados:
             super().__init__(*args, **kwargs)
             self.debug_info_ref = debug_info_ref
             self.last_result_df = None  # Armazenar último DataFrame resultado
-            self.all_results = []  # Armazenar todos os resultados SQL
 
-        def _is_top_n_query(self, query: str) -> bool:
-            """Identifica se uma query é candidata para visualização Top N"""
-            query_lower = query.lower()
-            
-            # Características de queries Top N
-            has_group_by = 'group by' in query_lower
-            has_order_by = 'order by' in query_lower
-            has_limit = 'limit' in query_lower
-            has_aggregation = any(agg in query_lower for agg in ['sum(', 'count(', 'avg(', 'max(', 'min('])
-            
-            # Queries que são claramente para visualização Top N
-            return has_group_by and has_order_by and (has_limit or has_aggregation)
 
         def _normalize_query_strings(self, query: str) -> str:
             """Aplica normalização LOWER() automaticamente a todas as comparações de strings na query"""
@@ -287,24 +274,10 @@ Tipos de dados:
                     import pandas as pd
                     df_result = self.connection.execute(normalized_query).df()
                     if not df_result.empty:
-                        # Armazenar resultado com metadados
-                        result_info = {
-                            'query': normalized_query,
-                            'dataframe': df_result,
-                            'is_top_n_candidate': self._is_top_n_query(normalized_query),
-                            'row_count': len(df_result),
-                            'column_count': len(df_result.columns)
-                        }
-                        self.all_results.append(result_info)
-                        
-                        # Atualizar last_result_df prioritariamente para queries Top N
-                        if result_info['is_top_n_candidate'] or self.last_result_df is None:
-                            self.last_result_df = df_result
+                        self.last_result_df = df_result
             except Exception as e:
                 # Se falhar, tentar extrair dados do resultado textual
-                parsed_df = self._parse_result_to_dataframe(result)
-                if parsed_df is not None:
-                    self.last_result_df = parsed_df
+                self.last_result_df = self._parse_result_to_dataframe(result)
             
             # Debug info e context extraction
             if self.debug_info_ref is not None and hasattr(
@@ -404,8 +377,7 @@ Tipos de dados:
         def detect_top_n_query(self, query: str) -> dict:
             """
             Detecta se a consulta é do tipo Top N (ranking/maiores/melhores)
-            e retorna informações sobre o tipo de visualização necessária,
-            incluindo detecção específica para consultas sobre clientes.
+            e retorna informações sobre o tipo de visualização necessária.
             """
             query_lower = query.lower()
             
@@ -416,65 +388,21 @@ Tipos de dados:
                 'mais vendidos', 'mais lucrativos', 'mais importantes'
             ]
             
-            # Keywords específicas para diferentes entidades
-            client_keywords = ['cliente', 'clientes', 'comprador', 'compradores']
-            product_keywords = ['produto', 'produtos', 'item', 'itens', 'sku']
-            location_keywords = ['estado', 'estados', 'uf', 'região', 'regiões', 'cidade', 'cidades', 'município', 'municípios']
-            
             # Detectar presença de keywords Top N
             is_top_n = any(keyword in query_lower for keyword in top_n_keywords)
             
-            # Detectar tipo de entidade principal da consulta
-            entity_type = None
-            entity_keywords_found = []
-            
-            if any(keyword in query_lower for keyword in client_keywords):
-                entity_type = 'client'
-                entity_keywords_found = [kw for kw in client_keywords if kw in query_lower]
-            elif any(keyword in query_lower for keyword in product_keywords):
-                entity_type = 'product' 
-                entity_keywords_found = [kw for kw in product_keywords if kw in query_lower]
-            elif any(keyword in query_lower for keyword in location_keywords):
-                entity_type = 'location'
-                entity_keywords_found = [kw for kw in location_keywords if kw in query_lower]
-            else:
-                entity_type = 'general'
-            
             # Detectar quantidade (Top 5, Top 10, etc.)
             import re
-            number_patterns = [
-                r'top\s*(\d+)', r'(\d+)\s*maiores', r'(\d+)\s*melhores', r'(\d+)\s*principais',
-                r'(\d+)\s*primeiros', r'(\d+)\s*clientes', r'(\d+)\s*produtos'
-            ]
-            
+            number_match = re.search(r'top\s*(\d+)|(\d+)\s*maiores|(\d+)\s*melhores|(\d+)\s*principais', query_lower)
             top_limit = None
-            for pattern in number_patterns:
-                number_match = re.search(pattern, query_lower)
-                if number_match:
-                    for group in number_match.groups():
-                        if group:
-                            top_limit = int(group)
-                            break
-                    if top_limit:
-                        break
-            
-            # Detectar consultas específicas sobre clientes (mesmo sem "top" explícito)
-            is_client_ranking = (
-                is_top_n and entity_type == 'client'
-            ) or any(pattern in query_lower for pattern in [
-                'ranking.*cliente', 'clientes.*maiores', 'melhores.*clientes',
-                'principais.*clientes', 'clientes.*principais'
-            ])
+            if number_match:
+                top_limit = int(number_match.group(1) or number_match.group(2) or number_match.group(3))
             
             return {
                 'is_top_n': is_top_n,
-                'is_client_query': is_client_ranking,
-                'entity_type': entity_type,
-                'entity_keywords_found': entity_keywords_found,
                 'top_limit': top_limit or 10,  # Default para Top 10
                 'visualization_type': 'bar_chart' if is_top_n else 'table',
-                'keywords_found': [kw for kw in top_n_keywords if kw in query_lower],
-                'requires_grouping': is_client_ranking  # Flag para indicar necessidade de agrupamento especial
+                'keywords_found': [kw for kw in top_n_keywords if kw in query_lower]
             }
 
         def process_and_visualize(self, query: str, response_content: str, top_n_info: dict) -> dict:
@@ -518,9 +446,6 @@ Tipos de dados:
                     df_chart = df[[label_col, value_col]].copy()
                     df_chart.columns = ['label', 'value']
                     
-                    # CORREÇÃO: Converter coluna label para string categórica para evitar problemas de visualização
-                    df_chart['label'] = df_chart['label'].astype(str)
-                    
                     # Limitar ao top_limit e ordenar
                     df_limited = df_chart.head(top_n_info['top_limit'])
                     df_sorted = df_limited.sort_values('value', ascending=False)
@@ -552,22 +477,12 @@ Tipos de dados:
             return visualization_data
 
         def _extract_data_from_sql_results(self):
-            """Extrai dados da última execução SQL bem-sucedida, priorizando queries Top N"""
+            """Extrai dados da última execução SQL bem-sucedida"""
             try:
                 # Primeiro: tentar obter dados do DuckDbTools
                 for tool in self.tools:
-                    if isinstance(tool, DebugDuckDbTools):
-                        # Procurar por resultado Top N nos all_results
-                        if hasattr(tool, 'all_results') and tool.all_results:
-                            # Priorizar queries Top N
-                            top_n_results = [r for r in tool.all_results if r['is_top_n_candidate']]
-                            if top_n_results:
-                                # Usar o resultado Top N mais recente
-                                best_result = top_n_results[-1]
-                                return best_result['dataframe'].to_dict('records')
-                        
-                        # Fallback para last_result_df
-                        if hasattr(tool, 'last_result_df') and tool.last_result_df is not None and not tool.last_result_df.empty:
+                    if isinstance(tool, DebugDuckDbTools) and hasattr(tool, 'last_result_df'):
+                        if tool.last_result_df is not None and not tool.last_result_df.empty:
                             return tool.last_result_df.to_dict('records')
                 
                 # Fallback: tentar obter dados do PythonTool
@@ -621,41 +536,20 @@ Tipos de dados:
                 return None
 
         def _identify_chart_columns(self, df, query):
-            """Identifica automaticamente as colunas para label (Y) e value (X) com priorização para Top N clientes"""
+            """Identifica automaticamente as colunas para label (Y) e value (X)"""
             try:
                 # Analisar nomes das colunas e tipos de dados
                 numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
                 text_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
-                all_cols = df.columns.tolist()
-                
-                # Detectar se é uma consulta sobre clientes
-                query_lower = query.lower()
-                is_client_query = any(keyword in query_lower for keyword in ['cliente', 'clientes', 'top.*cliente', 'ranking.*cliente'])
                 
                 # Heurísticas para identificar colunas
                 value_col = None
                 label_col = None
                 
-                # PRIORIZAÇÃO ESPECÍFICA PARA CONSULTAS SOBRE CLIENTES
-                if is_client_query:
-                    # Buscar especificamente por Cod_Cliente (prioritário para clientes)
-                    for col in all_cols:
-                        if col.lower() in ['cod_cliente', 'codigo_cliente', 'id_cliente', 'cliente_id']:
-                            label_col = col
-                            break
-                    
-                    # Se não encontrou Cod_Cliente, buscar por outras colunas de cliente
-                    if not label_col:
-                        client_keywords = ['cliente', 'cod_cliente', 'codigo_cliente', 'id_cliente']
-                        for col in text_cols:
-                            if any(keyword in col.lower() for keyword in client_keywords):
-                                label_col = col
-                                break
-                
                 # Priorizar colunas numéricas para valores
                 if numeric_cols:
                     # Procurar por colunas com keywords de valor
-                    value_keywords = ['valor', 'vendas', 'receita', 'faturamento', 'total', 'sum', 'count', 'quantidade', 'qtd']
+                    value_keywords = ['valor', 'vendas', 'receita', 'faturamento', 'total', 'sum', 'count', 'quantidade']
                     for col in numeric_cols:
                         if any(keyword in col.lower() for keyword in value_keywords):
                             value_col = col
@@ -665,29 +559,14 @@ Tipos de dados:
                     if not value_col:
                         value_col = numeric_cols[0]
                 
-                # Procurar por colunas de texto para labels (se ainda não definido)
-                if not label_col and text_cols:
-                    # Priorizar por tipo de entidade da consulta
-                    if is_client_query:
-                        # Para consultas de cliente, priorizar colunas relacionadas a cliente
-                        priority_keywords = ['cliente', 'cod_cliente', 'codigo_cliente']
-                    else:
-                        # Para outras consultas, usar keywords gerais
-                        priority_keywords = ['uf', 'estado', 'cidade', 'municipio', 'produto', 'linha', 'categoria']
-                    
-                    # Buscar com palavras-chave prioritárias
+                # Procurar por colunas de texto para labels
+                if text_cols:
+                    # Procurar por colunas com keywords de entidade
+                    label_keywords = ['uf', 'estado', 'cidade', 'municipio', 'cliente', 'produto', 'linha', 'categoria']
                     for col in text_cols:
-                        if any(keyword in col.lower() for keyword in priority_keywords):
+                        if any(keyword in col.lower() for keyword in label_keywords):
                             label_col = col
                             break
-                    
-                    # Fallback: buscar com keywords gerais
-                    if not label_col:
-                        general_keywords = ['uf', 'estado', 'cidade', 'municipio', 'cliente', 'produto', 'linha', 'categoria']
-                        for col in text_cols:
-                            if any(keyword in col.lower() for keyword in general_keywords):
-                                label_col = col
-                                break
                     
                     # Se não encontrou por keyword, usar primeira coluna de texto
                     if not label_col:
@@ -1922,7 +1801,7 @@ Tipos de dados:
             return response
 
     agent = PrincipalAgent(
-        model=OpenAIChat(id=selected_model),
+        model=OpenAIChat(id=selected_model, reasoning_effort="low"),
         description="Você é um assistente especializado em análise de dados comerciais. Você tem acesso ao dataset DadosComercial_resumido_v02.parquet com normalização de texto aplicada e pode responder perguntas baseadas nesse conteúdo. Você também tem memória contextual para lembrar de conversas anteriores na mesma sessão.",
         tools=[
             ReasoningTools(add_instructions=True),
@@ -2044,47 +1923,6 @@ ORDER BY ordenação
 
 # INCORRETO ❌
 1. SQL: SELECT (valor_a / valor_total) * 100 as percentual
-```
-
-#### 🎯 Regras Específicas para Top N Clientes
-
-**ESSENCIAL: Agrupamento por Cod_Cliente**
-
-Para consultas do tipo "Top N clientes", "maiores clientes", "ranking de clientes":
-
-```sql
--- PADRÃO OBRIGATÓRIO para clientes ✅
-SELECT Cod_Cliente, SUM(Qtd_Vendida) as total_vendido
-FROM tabela 
-GROUP BY Cod_Cliente
-ORDER BY total_vendido DESC
-LIMIT N
-
--- NUNCA fazer isso ❌
-SELECT * FROM tabela
-ORDER BY Qtd_Vendida DESC
-LIMIT N
-```
-
-**Princípios Fundamentais:**
-- **SEMPRE agrupar por `Cod_Cliente`** para evitar linhas duplicadas por cliente
-- **Consolidar métricas:** SUM(Qtd_Vendida), SUM(Valor_Total), COUNT(*) etc.
-- **Uma barra = Um cliente único** no gráfico final
-- **Ordenar pelo valor consolidado** para ranking correto
-
-**Exemplos de Agregações Corretas:**
-```sql
--- Top clientes por valor total
-SELECT Cod_Cliente, SUM(Valor_Total) as valor_total
-FROM tabela GROUP BY Cod_Cliente ORDER BY valor_total DESC
-
--- Top clientes por quantidade
-SELECT Cod_Cliente, SUM(Qtd_Vendida) as qtd_total  
-FROM tabela GROUP BY Cod_Cliente ORDER BY qtd_total DESC
-
--- Top clientes por número de pedidos
-SELECT Cod_Cliente, COUNT(*) as num_pedidos
-FROM tabela GROUP BY Cod_Cliente ORDER BY num_pedidos DESC
 ```
 
 ### 🔍 Validação de Qualidade
