@@ -275,6 +275,25 @@ def render_plotly_visualization(visualization_data):
         df_with_labels = df.copy()
         df_with_labels['value_label'] = df_with_labels['value'].apply(format_compact_number)
         
+        # Verificar se foi detectado como ID categórico pelo backend e ajustar labels
+        is_categorical_id = config.get('is_categorical_id', False)
+        
+        # Detecção adicional no frontend como fallback
+        if not is_categorical_id and not df_with_labels.empty:
+            sample_labels = df_with_labels['label'].head().astype(str)
+            # Padrões que indicam IDs categóricos: números de 3-8 dígitos
+            for label in sample_labels:
+                if label.isdigit() and 3 <= len(label) <= 8:
+                    is_categorical_id = True
+                    break
+        
+        # Formatar labels para IDs categóricos
+        if is_categorical_id:
+            original_col = config.get('original_label_column', '')
+            if 'cliente' in original_col.lower():
+                # Para códigos de cliente, adicionar prefixo
+                df_with_labels['label'] = 'Cliente ' + df_with_labels['label'].astype(str)
+        
         # Criar gráfico de barras horizontais
         fig = px.bar(
             df_with_labels,
@@ -311,10 +330,19 @@ def render_plotly_visualization(visualization_data):
         )
         
         # Configurações do eixo Y para melhor legibilidade
-        fig.update_yaxes(
-            categoryorder='total ascending',  # Ordenar por valor
-            tickfont=dict(size=12, family='Arial')
-        )
+        if is_categorical_id:
+            # Forçar tratamento como categoria para códigos de cliente/produto
+            fig.update_yaxes(
+                type='category',  # Forçar tipo categoria
+                categoryorder='total ascending',  # Ordenar por valor
+                tickfont=dict(size=12, family='Arial')
+            )
+        else:
+            # Comportamento padrão para outras categorias
+            fig.update_yaxes(
+                categoryorder='total ascending',  # Ordenar por valor
+                tickfont=dict(size=12, family='Arial')
+            )
         
         # Configurações do eixo X com formatação inteligente e estilo aprimorado
         value_format = config.get('value_format', 'number')
