@@ -439,6 +439,9 @@ Tipos de dados:
                 
                 # Se conseguiu extrair dados, processar para visualização
                 if df is not None and not df.empty and len(df.columns) >= 2:
+                    # Converter colunas categóricas que podem estar como numéricas
+                    df = self._preprocess_categorical_columns(df)
+                    
                     # Identificar colunas automaticamente
                     label_col, value_col = self._identify_chart_columns(df, query)
                     
@@ -446,12 +449,18 @@ Tipos de dados:
                     df_chart = df[[label_col, value_col]].copy()
                     df_chart.columns = ['label', 'value']
                     
+                    # Garantir que a coluna label seja tratada como string
+                    df_chart['label'] = df_chart['label'].astype(str)
+                    
                     # Limitar ao top_limit e ordenar
                     df_limited = df_chart.head(top_n_info['top_limit'])
                     df_sorted = df_limited.sort_values('value', ascending=False)
                     
                     # Gerar título dinâmico baseado na query
                     chart_title = self._generate_chart_title(query, top_n_info['top_limit'], label_col, value_col)
+                    
+                    # Detectar se a coluna label são IDs categóricos
+                    is_categorical_id = self._is_categorical_id_column(label_col, df_sorted['label'])
                     
                     visualization_data = {
                         'type': 'bar_chart',
@@ -463,7 +472,9 @@ Tipos de dados:
                             'x_column': 'value',
                             'y_column': 'label',
                             'max_items': top_n_info['top_limit'],
-                            'value_format': self._detect_value_format(df_sorted['value'])
+                            'value_format': self._detect_value_format(df_sorted['value']),
+                            'is_categorical_id': is_categorical_id,
+                            'original_label_column': label_col
                         }
                     }
                 else:
@@ -475,6 +486,25 @@ Tipos de dados:
                 visualization_data['type'] = 'table'
                 
             return visualization_data
+
+        def _preprocess_categorical_columns(self, df):
+            """Pré-processa colunas que devem ser tratadas como categóricas"""
+            try:
+                # Colunas que devem ser convertidas para string/categoria
+                categorical_id_cols = ['cod_cliente', 'codigo_cliente', 'cliente_id', 'id_cliente']
+                
+                df_processed = df.copy()
+                for col in df_processed.columns:
+                    # Verificar se é uma coluna de ID categórico
+                    if any(cat_col in col.lower() for cat_col in categorical_id_cols):
+                        # Converter para string se for numérica
+                        if df_processed[col].dtype in ['int64', 'int32', 'float64', 'float32']:
+                            df_processed[col] = df_processed[col].astype(str)
+                
+                return df_processed
+            except Exception as e:
+                # Se houver erro, retornar DataFrame original
+                return df
 
         def _extract_data_from_sql_results(self):
             """Extrai dados da última execução SQL bem-sucedida"""
@@ -538,15 +568,26 @@ Tipos de dados:
         def _identify_chart_columns(self, df, query):
             """Identifica automaticamente as colunas para label (Y) e value (X)"""
             try:
+                # Colunas que devem ser tratadas como categorias mesmo se numéricas
+                categorical_id_cols = ['cod_cliente', 'codigo_cliente', 'cliente_id', 'id_cliente']
+                
                 # Analisar nomes das colunas e tipos de dados
                 numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
                 text_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
+                
+                # Remover colunas de ID categóricas das numéricas e adicionar às textuais
+                categorical_numeric_cols = []
+                for col in numeric_cols[:]:
+                    if any(cat_col in col.lower() for cat_col in categorical_id_cols):
+                        categorical_numeric_cols.append(col)
+                        numeric_cols.remove(col)
+                        text_cols.append(col)
                 
                 # Heurísticas para identificar colunas
                 value_col = None
                 label_col = None
                 
-                # Priorizar colunas numéricas para valores
+                # Priorizar colunas numéricas para valores (exceto IDs categóricos)
                 if numeric_cols:
                     # Procurar por colunas com keywords de valor
                     value_keywords = ['valor', 'vendas', 'receita', 'faturamento', 'total', 'sum', 'count', 'quantidade']
@@ -559,7 +600,7 @@ Tipos de dados:
                     if not value_col:
                         value_col = numeric_cols[0]
                 
-                # Procurar por colunas de texto para labels
+                # Procurar por colunas de texto para labels (incluindo IDs categóricos)
                 if text_cols:
                     # Procurar por colunas com keywords de entidade
                     label_keywords = ['uf', 'estado', 'cidade', 'municipio', 'cliente', 'produto', 'linha', 'categoria']
@@ -592,7 +633,11 @@ Tipos de dados:
                     'municipio_cliente': 'Cidades', 
                     'des_linha_produto': 'Produtos',
                     'cliente': 'Clientes',
-                    'produto': 'Produtos'
+                    'produto': 'Produtos',
+                    'cod_cliente': 'Clientes',
+                    'codigo_cliente': 'Clientes',
+                    'cliente_id': 'Clientes',
+                    'id_cliente': 'Clientes'
                 }
                 
                 value_mapping = {
@@ -620,6 +665,29 @@ Tipos de dados:
                     return 'number'
             except:
                 return 'number'
+
+        def _is_categorical_id_column(self, column_name, values):
+            """Detecta se uma coluna deve ser tratada como ID categórico"""
+            try:
+                # Verificar pelo nome da coluna
+                categorical_id_patterns = ['cod_cliente', 'codigo_cliente', 'cliente_id', 'id_cliente', 'cliente']
+                if any(pattern in column_name.lower() for pattern in categorical_id_patterns):
+                    return True
+                
+                # Verificar pelos valores - se parecem códigos numéricos curtos
+                sample_values = values.head().astype(str)
+                numeric_ids = 0
+                for val in sample_values:
+                    if val.isdigit() and 3 <= len(val) <= 8:
+                        numeric_ids += 1
+                
+                # Se mais de 50% dos valores parecem IDs numéricos, tratar como categoria
+                if numeric_ids / len(sample_values) >= 0.5:
+                    return True
+                
+                return False
+            except:
+                return False
         
         def detect_explicit_context_changes(self, query: str) -> dict:
             """
